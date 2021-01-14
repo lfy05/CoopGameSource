@@ -4,18 +4,23 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Components/SkeletalMeshComponent.h"
+//#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/DamageType.h"
 #include "Particles/ParticleSystem.h"
 #include "Camera/CameraShake.h"
 #include "Engine/EngineTypes.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundCue.h"
+#include "NiagaraSystem.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
+#include "Components/ActorComponent.h"
 #include "SWeapon.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBulletCountChanged, int32, NumBulletsInClip);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBulletCountChanged, int32, NumBulletsInClip, int32, ClipSize);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBulletCountChanged, int32,BulletsInClip, int32, ClipSize);
 
 // contains information of a single hitscan weapon linetrace
 USTRUCT()
@@ -48,11 +53,23 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void StopFire();
 
-	UFUNCTION(NetMulticast, Reliable)
+	UPROPERTY(Replicated)
+	bool bIsFiring = false;
+
+	UFUNCTION(NetMulticast, Reliable, BlueprintCallable)
 	void Reload();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
 	int32 DefaultClipSize;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon") 
+	int ZoomedFOV;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	FText WeaponName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	UTexture2D *WeaponTexture;
 
 protected:
 
@@ -83,11 +100,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
 	UParticleSystem *FleshImpactEffect;
 
+	//UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	//UParticleSystem *TracerEffect;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	UParticleSystem *TracerEffect;
+	UNiagaraSystem* TracerEffect;  
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TSubclassOf<UCameraShake> FireCamShake;
+	TSubclassOf<UMatineeCameraShake> FireCamShake;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	float BaseDamage;

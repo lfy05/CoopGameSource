@@ -7,7 +7,7 @@
 #include "SHealthComponent.generated.h"
 
 // OnHealthChangedEvent
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_SixParams(FOnHealthChangedSignature, USHealthComponent *, HealthComp, float, Health, float, HealthDelta, const class UDamageType *, DamageType, class AController *, InsitigatedBy, AActor *, DamageCauser);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_SevenParams(FOnHealthChangedSignature, USHealthComponent *, HealthComp, float, TotalHealth, float, CurrentHealth, float, HealthDelta, const class UDamageType *, DamageType, class AController *, InsitigatedBy, AActor *, DamageCauser);
 
 UCLASS( ClassGroup=(COOP), meta=(BlueprintSpawnableComponent) )
 class COOPGAME_API USHealthComponent : public UActorComponent
@@ -23,13 +23,13 @@ protected:
 	virtual void BeginPlay() override;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Health, BlueprintReadOnly, Category = "HealthComponent")
-	float Health;
+	float CurrentHealth;
 
 	UFUNCTION()
 	void OnRep_Health(float OldHealth);
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HealthComponent")
-	float DefaultHealth;
+	float TotalHealth;
 
 	UFUNCTION()
 	void HandleTakeAnyDamage(AActor *DamagedActor, float Damage, const class UDamageType *DamageType, class AController *InsitigatedBy, AActor *DamageCauser);
@@ -46,7 +46,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HealthComp")
 	void Heal(float HealAmount);
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HealthComponent")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HealthComponent")
 	uint8 TeamNum;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "HealthComp")

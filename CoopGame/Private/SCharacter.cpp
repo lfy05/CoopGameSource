@@ -2,23 +2,26 @@
 
 
 #include "SCharacter.h"
+
+#include "SGameInstance.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/NavMovementComponent.h"
 #include "AI/Navigation/NavigationTypes.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "../CoopGame.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetMathLibrary.h"
 
 // Sets default values
-ASCharacter::ASCharacter()
-{
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+ASCharacter::ASCharacter() {
+	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 	HealthComp = CreateDefaultSubobject<USHealthComponent>(TEXT("HealthComp"));
-	
+
 	SpringArmComp = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArmComp"));
 	SpringArmComp->SetupAttachment(RootComponent);
 	SpringArmComp->bUsePawnControlRotation = true;
@@ -33,16 +36,36 @@ ASCharacter::ASCharacter()
 	ZoomedFOV = 65.0f;
 	ZoomInterSpeed = 20.0f;
 
-	WeaponAttachSocketName = "WeaponSocket";
+	CurrentWeaponAttachSocketName = "WeaponSocket";
+	StandbyWeaponAttachSocketName = "StandbyWeaponSocket";
+
+	SprintSpeedMultiplier = 1.5;
+
+	AimSpaceInterpolateSpeed = 15.0;
+}
+
+void ASCharacter::Destroyed() {
+	DestroyWeapon();
 }
 
 // Called when the game starts or when spawned
 // begin play runs everywhere on server or clients
-void ASCharacter::BeginPlay()
-{
+void ASCharacter::BeginPlay() {
 	Super::BeginPlay();
 	DefaultFOV = CameraComp->FieldOfView;
 	HealthComp->OnHealthChanged.AddDynamic(this, &ASCharacter::OnHealthChanged);
+
+	// initialize Weapon slots
+	USGameInstance *GameInstance = Cast<USGameInstance>(GetGameInstance());
+
+	if (GameInstance) {
+		MainWeaponClass = GameInstance->PlayerMainWeaponClass;
+		SecondaryWeaponClass = GameInstance->PlayerSecondaryWeaponClass;
+	}
+
+	if (MainWeaponClass) {
+		ZoomedFOV = MainWeaponClass.GetDefaultObject()->ZoomedFOV;
+	}
 
 	// only run on server
 	if (HasAuthority()) {
@@ -50,20 +73,32 @@ void ASCharacter::BeginPlay()
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-		CurrentWeapon = GetWorld()->SpawnActor<ASWeapon>(StarterWeaponClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
-		if (CurrentWeapon) {
-			CurrentWeapon->SetOwner(this);
-			CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponAttachSocketName);
+		MainWeapon = GetWorld()->SpawnActor<ASWeapon>(MainWeaponClass, FVector::ZeroVector, FRotator::ZeroRotator,
+		                                                 SpawnParams);
+		SecondaryWeapon = GetWorld()->SpawnActor<ASWeapon>(SecondaryWeaponClass, FVector::ZeroVector, FRotator::ZeroRotator,
+		                                                 SpawnParams);
+
+		if (MainWeapon) {
+			MainWeapon->SetOwner(this);
+			MainWeapon->AttachToComponent(GetMesh(), 
+				FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			                                 CurrentWeaponAttachSocketName);
+			CurrentWeapon = MainWeapon;
+		}
+
+		if (SecondaryWeapon) {
+			SecondaryWeapon->SetOwner(this);
+			SecondaryWeapon->AttachToComponent(GetMesh(),
+				FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+				StandbyWeaponAttachSocketName);
 		}
 	}
-
-
 }
+
 
 void ASCharacter::MoveForward(float Value) {
 	AddMovementInput(GetActorForwardVector() * Value);
 }
-
 
 
 void ASCharacter::MoveRight(float Value) {
@@ -78,6 +113,32 @@ void ASCharacter::EndCrouch() {
 	UnCrouch();
 }
 
+void ASCharacter::BeginSprint_Implementation() {
+	if (CurrentWeapon) {
+		if (CurrentWeapon->bIsFiring) return;
+	}
+	
+	this->bIsSprinting = true;
+	UCharacterMovementComponent* MovementComp = Cast<UCharacterMovementComponent>(this->GetCharacterMovement());
+	MovementComp->MaxWalkSpeed *= SprintSpeedMultiplier;
+}
+
+void ASCharacter::ServerBeginSprint_Implementation() {
+	BeginSprint();
+}
+
+void ASCharacter::EndSprint_Implementation() {
+	if (!bIsSprinting) return;
+	
+	this->bIsSprinting = false;
+	UCharacterMovementComponent* MovementComp = Cast<UCharacterMovementComponent>(this->GetCharacterMovement());
+	MovementComp->MaxWalkSpeed /= SprintSpeedMultiplier;
+}
+
+void ASCharacter::ServerEndSprint_Implementation() {
+	EndSprint();
+}
+
 void ASCharacter::BeginZoom() {
 	bWantsToZoom = true;
 }
@@ -87,6 +148,8 @@ void ASCharacter::EndZoom() {
 }
 
 void ASCharacter::StartFire() {
+	if (bIsReloading || bIsSprinting) return;
+	
 	if (CurrentWeapon) {
 		CurrentWeapon->StartFire();
 	}
@@ -98,17 +161,37 @@ void ASCharacter::StopFire() {
 	}
 }
 
+void ASCharacter::DestroyWeapon() {
+	if (MainWeapon) {
+		MainWeapon->Destroy();
+	}
 
+	if (SecondaryWeapon) {
+		SecondaryWeapon->Destroy();
+	}
+}
 
-void ASCharacter::OnHealthChanged(USHealthComponent *OwningHealthComp, float Health, float HealthDelta, const class UDamageType *DamageType, class AController *InsitigatedBy, AActor *DamageCauser) {
-	if (Health <= 0.0f && !bDied) {
+void ASCharacter::UpdateAimSpace(float DeltaTime) {
+	if (HasAuthority()) {
+		FRotator TargetRotation = this->GetControlRotation();
+		FRotator CurrentRotator = FRotator(AimPitch, AimYaw, 0);
+		FRotator InterpedRotator = FMath::RInterpTo(CurrentRotator, TargetRotation, DeltaTime, AimSpaceInterpolateSpeed);
+
+		float Roll, Pitch, Yaw;
+		UKismetMathLibrary::BreakRotator(InterpedRotator, Roll, Pitch, Yaw);
+
+		AimPitch = FMath::ClampAngle(Pitch, -90, 90);
+		AimYaw = FMath::ClampAngle(Yaw, -90, 90);
+	}
+}
+
+void ASCharacter::OnHealthChanged(USHealthComponent* OwningHealthComp, float TotalHealth, float CurrentHealth, float HealthDelta,
+                                  const class UDamageType* DamageType, class AController* InsitigatedBy,
+                                  AActor* DamageCauser) {
+	if (CurrentHealth <= 0.0f && !bDied) {
 		// DIE
 		bDied = true;
-
-		// stop weapon fire
-		// UE_LOG(LogTemp, Log, TEXT("Stopped firing due to death"));
 		
-
 		// stop movement
 		GetMovementComponent()->StopMovementImmediately();
 		StopFire();
@@ -120,7 +203,7 @@ void ASCharacter::OnHealthChanged(USHealthComponent *OwningHealthComp, float Hea
 
 		// Detach controller
 		DetachFromControllerPendingDestroy();
-		SetLifeSpan(10.0f);
+		SetLifeSpan(5.0f);
 
 		PlayDeathSFX();
 	}
@@ -133,15 +216,9 @@ void ASCharacter::PlayDeathSFX_Implementation() {
 }
 
 
-
 void ASCharacter::Reload_Implementation() {
-	GetMovementComponent()->StopMovementImmediately();
-
-	PlayAnimMontage(ReloadingMontage);
-
-	if (CurrentWeapon) {
-		CurrentWeapon->Reload();
-	}
+	if (bIsSprinting) return;
+	bIsReloading = true;
 }
 
 void ASCharacter::ServerReload_Implementation() {
@@ -152,19 +229,47 @@ bool ASCharacter::ServerReload_Validate() {
 	return true;
 }
 
+void ASCharacter::TriggerServerChangeWeapon_Implementation() {
+	if (WeaponSlotInUse == EWeaponSlotInUse::MainWeapon) {
+		ServerChangeWeapon(SecondaryWeapon, EWeaponSlotInUse::SecondaryWeapon);
+	} else {
+		ServerChangeWeapon(MainWeapon, EWeaponSlotInUse::MainWeapon);
+	}
+}
+
+void ASCharacter::ServerChangeWeapon_Implementation(ASWeapon *TargetWeapon, EWeaponSlotInUse WeaponSlot) {
+	CurrentWeapon->AttachToComponent(GetMesh(), 
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		StandbyWeaponAttachSocketName);
+
+	ASWeapon *PreviousWeapon = CurrentWeapon;
+
+	CurrentWeapon = TargetWeapon;
+
+	CurrentWeapon->AttachToComponent(GetMesh(),
+		FAttachmentTransformRules::SnapToTargetIncludingScale,
+		CurrentWeaponAttachSocketName);
+
+	ZoomedFOV = TargetWeapon->ZoomedFOV;
+
+	WeaponSlotInUse = WeaponSlot;
+
+	OnWeaponSwitched.Broadcast(PreviousWeapon, TargetWeapon);
+}
+
 // Called every frame
-void ASCharacter::Tick(float DeltaTime)
-{
+void ASCharacter::Tick(float DeltaTime) {
 	Super::Tick(DeltaTime);
 
 	float TargetFOV = bWantsToZoom ? ZoomedFOV : DefaultFOV;
 	float NewFOV = FMath::FInterpTo(CameraComp->FieldOfView, TargetFOV, DeltaTime, ZoomInterSpeed);
 	CameraComp->SetFieldOfView(NewFOV);
+
+	UpdateAimSpace(DeltaTime);
 }
 
 // Called to bind functionality to input
-void ASCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-{
+void ASCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &ASCharacter::MoveForward);
@@ -186,20 +291,28 @@ void ASCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction("Fire", IE_Released, this, &ASCharacter::StopFire);
 
 	PlayerInputComponent->BindAction("Reload", IE_Pressed, this, &ASCharacter::ServerReload);
+
+	PlayerInputComponent->BindAction("Sprint", IE_Pressed, this, &ASCharacter::ServerBeginSprint);
+	PlayerInputComponent->BindAction("Sprint", IE_Released, this, &ASCharacter::ServerEndSprint);
+
+	PlayerInputComponent->BindAction("SwitchWeapon", IE_Pressed, this, &ASCharacter::TriggerServerChangeWeapon);
 }
 
 FVector ASCharacter::GetPawnViewLocation() const {
 	if (CameraComp) {
 		return CameraComp->GetComponentLocation();
-	} 
+	}
 
 	return Super::GetPawnViewLocation();
 }
 
 // this defines how to replicate 
-void ASCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty> &OutLifetimeProps) const {
+void ASCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ASCharacter, CurrentWeapon);
+	DOREPLIFETIME(ASCharacter, WeaponSlotInUse);
 	DOREPLIFETIME(ASCharacter, bDied);
+	DOREPLIFETIME(ASCharacter, AimYaw);
+	DOREPLIFETIME(ASCharacter, AimPitch);
 }

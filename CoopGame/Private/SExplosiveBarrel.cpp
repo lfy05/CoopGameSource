@@ -27,12 +27,12 @@ ASExplosiveBarrel::ASExplosiveBarrel()
 	SetReplicateMovement(true);
 }
 
-void ASExplosiveBarrel::OnHealthChanged(USHealthComponent *OwningHealthComp, float Health, float HealthDelta, const class UDamageType *DamageType, class AController *InstigatedBy, AActor *DamageCause) {
+void ASExplosiveBarrel::OnHealthChanged(USHealthComponent *OwningHealthComp, float TotalHealth, float CurrentHealth, float HealthDelta, const class UDamageType *DamageType, class AController *InstigatedBy, AActor *DamageCause) {
 	if (bExploed) {
 		return;
 	}
 
-	if (Health <= 0.0f) {
+	if (CurrentHealth <= 0.0f) {
 		bExploed = true;
 		OnRep_Explode();
 

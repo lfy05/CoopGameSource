@@ -2,6 +2,9 @@
 
 
 #include "SGameState.h"
+
+
+#include "SPlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -56,4 +59,36 @@ void ASGameState::PlayGameOverSFX_Implementation() {
 	} else {
 		UE_LOG(LogTemp, Log, TEXT("GameOverSFX is not assigned"));
 	}
+}
+
+void ASGameState::TriggerGameOverEvent_Implementation() {
+	TArray<AActor *> AllPlayers;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASCharacter::StaticClass(), AllPlayers);
+
+	if (AllPlayers.Num() <= 0) return;
+	
+	ASCharacter *Winner = Cast<ASCharacter>(AllPlayers[0]);
+	int WinnerKill = 0;
+	for(AActor *Player: AllPlayers) {
+		ASCharacter *SPlayer = Cast<ASCharacter>(Player);
+		if (SPlayer) {
+			APlayerState *PlayerState = SPlayer->GetPlayerState();
+			if (PlayerState) {
+				ASPlayerState *SPlayerState = Cast<ASPlayerState>(PlayerState);
+				if (SPlayerState) {
+					if (SPlayerState->GetScore() > WinnerKill) {
+						Winner = SPlayer;
+						WinnerKill = SPlayerState->GetScore();
+					}	
+				}
+			}
+		}
+	}
+
+	if (Winner) {
+		OnGameOver.Broadcast(Winner, WinnerKill);
+	}
+
+	WaveState = EWaveState::GameOver;
+	UE_LOG(LogTemp, Log, TEXT("Called OnGameOver"));
 }

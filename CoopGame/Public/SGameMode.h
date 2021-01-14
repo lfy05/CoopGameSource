@@ -52,6 +52,7 @@ protected:
 
 	void CheckAnyPlayerAlive();
 
+	UFUNCTION(BlueprintCallable)
 	void GameOver();
 
 	void SetWaveState(EWaveState NewState);

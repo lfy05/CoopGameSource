@@ -33,7 +33,13 @@ protected:
 	USphereComponent *SphereComp;
 
 	UFUNCTION()
-	void HandleTakeDamage(USHealthComponent *OwningHealthComp, float Health, float HealthDelta, const class UDamageType *DamageType, class AController *InsitigatedBy, AActor *DamageCauser);
+	void HandleTakeDamage(USHealthComponent *OwningHealthComp, 
+		float TotalHealth, 
+		float CurrentHealth, 
+		float HealthDelta, 
+		const class UDamageType *DamageType, 
+		class AController *InsitigatedBy, 
+		AActor *DamageCauser);
 
 	FVector GetNextPathPoint();
 

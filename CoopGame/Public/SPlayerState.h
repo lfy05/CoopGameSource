@@ -7,6 +7,8 @@
 #include "SPlayerState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnScoreUpdated, int, NewScore);
+
+
 /**
  * 
  */
@@ -17,6 +19,8 @@ class COOPGAME_API ASPlayerState : public APlayerState
 
 	UPROPERTY(BlueprintAssignable)
 	FOnScoreUpdated OnScoreUpdated;
+
+	
 	
 public:
 	UFUNCTION(NetMulticast, Reliable, BlueprintCallable, Category = "PlayerState")

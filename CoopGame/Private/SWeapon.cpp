@@ -9,10 +9,11 @@
 #include "Components/SceneComponent.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "GameFramework/PlayerController.h"
-#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "../CoopGame.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
+#include "Chaos/ChaosEngineInterface.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 static int32 DebugWeaponDrawing = 0;
 FAutoConsoleVariableRef CVARDebugWeaponDrawing(TEXT("COOP.DebugWeapons"),
@@ -27,7 +28,7 @@ ASWeapon::ASWeapon()
 	MeshComp = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MeshComp"));
 	RootComponent = MeshComp;
 
-	MuzzleSocketName = "MuzzleSocket";
+	MuzzleSocketName = "Muzzle";
 	TracerTargetName = "BeamEnd";
 	BaseDamage = 20.0f;
 	BulletSpread = 2.0f;
@@ -35,6 +36,7 @@ ASWeapon::ASWeapon()
 
 	// set this as a replicated actor. Remember to also tick replicates in the blueprint (when double loading, double check variables)
 	SetReplicates(true);
+	// SetIsReplicatedByDefault(true);
 
 	NetUpdateFrequency = 66.0f;
 	MinNetUpdateFrequency = 33.0f;
@@ -42,19 +44,20 @@ ASWeapon::ASWeapon()
 	AudioComp = CreateDefaultSubobject<UAudioComponent>(TEXT("AudioComp"));
 	AudioComp->SetupAttachment(RootComponent);
 	// AudioComp->SetIsReplicated(true);
-
-	DefaultClipSize = 50;
-	BulletsInClip = DefaultClipSize;
 }
 
 void ASWeapon::BeginPlay() {
 	Super::BeginPlay();
 
+	BulletsInClip = DefaultClipSize;
+
 	// set time between shots
 	TimeBetweenShots = 60 / RateOfFire;
 
-	OnBulletCountChanged.Broadcast(BulletsInClip);
+	OnBulletCountChanged.Broadcast(BulletsInClip, DefaultClipSize);
 }
+
+
 
 void ASWeapon::Fire() {
 	// trace the world from pawn eyes to crosshair location (Center screen)
@@ -65,7 +68,7 @@ void ASWeapon::Fire() {
 	}
 	
 	BulletsInClip--;
-	OnBulletCountChanged.Broadcast(BulletsInClip);
+	OnBulletCountChanged.Broadcast(BulletsInClip, DefaultClipSize);
 
 	// make sure Fire() runs on server
 	if (!HasAuthority()) {
@@ -145,6 +148,8 @@ void ASWeapon::StartFire() {
 		return;
 	}
 
+	bIsFiring = true;
+
 	float FirstDelay = FMath::Max(LastFireTime + TimeBetweenShots - GetWorld()->TimeSeconds, 0.0f); // need to make sure it is not negative
 	
 	// UE_LOG(LogTemp, Log, TEXT("Playing firing SFX"));
@@ -159,11 +164,14 @@ void ASWeapon::StopFire_Implementation() {
 
 	// UE_LOG(LogTemp, Log, TEXT("Stopping firing SFX"));
 	GetWorldTimerManager().ClearTimer(TimerHandle_TimeBetweenShots);
+
+	bIsFiring = false;
 }
 
 void ASWeapon::Reload_Implementation() {
+	
 	BulletsInClip = DefaultClipSize;
-	OnBulletCountChanged.Broadcast(BulletsInClip);
+	OnBulletCountChanged.Broadcast(BulletsInClip, DefaultClipSize);
 }
 
 void ASWeapon::PlayFireEffects(FVector TraceEndPoint) {
@@ -174,19 +182,24 @@ void ASWeapon::PlayFireEffects(FVector TraceEndPoint) {
 	if (TracerEffect) {
 		// actual location required
 		FVector MuzzleLocation = MeshComp->GetSocketLocation(MuzzleSocketName);
-		UParticleSystemComponent *TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEffect, MuzzleLocation);
-
-		if (TracerComp) {
-			UE_LOG(LogTemp, Log, TEXT("Setting End"));
-			TracerComp->SetVectorParameter(TracerTargetName, TraceEndPoint);
-		}
+		// UParticleSystemComponent *TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEffect, MuzzleLocation);
+		UNiagaraComponent *TracerComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TracerEffect, MuzzleLocation, 
+			(TraceEndPoint - MuzzleLocation).Rotation());
+		// TracerComp->SetNiagaraVariableLinearColor(FString(TEXT("User.Color")), TracerColor);
+		//if (TracerComp) {
+			//UE_LOG(LogTemp, Log, TEXT("Setting End"));
+			//TracerComp->
+			//UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TracerEffect, MuzzleLocation);
+		//}
 	}
 
 	APawn *MyOwner = Cast<APawn>(GetOwner());
 	if (MyOwner) {
 		APlayerController* PC = Cast<APlayerController>(MyOwner->GetController());
 		if (PC) {
-			PC->ClientPlayCameraShake(FireCamShake);
+			// PC->ClientPlayCameraShake(FireCamShake);
+
+			PC->ClientStartCameraShake(FireCamShake);
 		}
 	}
 }
@@ -237,7 +250,7 @@ bool ASWeapon::PlayFireSoundEffect_Validate() {
 
 void ASWeapon::StopFireSoundEffect_Implementation() {
 	UE_LOG(LogTemp, Log, TEXT("Multicast stop firingSFX"));
-	AudioComp->Stop();
+	//AudioComp->Stop();
 }
 
 bool ASWeapon::StopFireSoundEffect_Validate() {

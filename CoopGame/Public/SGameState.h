@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "SCharacter.h"
 #include "GameFramework/GameStateBase.h"
 #include "Sound/SoundCue.h"
 #include "SGameState.generated.h"
@@ -23,6 +24,7 @@ enum class EWaveState: uint8 {
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWaveCountUpdated, int32, NewWaveCount);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGameOver, ASCharacter *, WinnerName, int, WinnerKill);
 
 /**
  * 
@@ -74,4 +76,9 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void PlayGameOverSFX();
 
+	UPROPERTY(BlueprintAssignable)
+	FOnGameOver OnGameOver;
+
+	UFUNCTION(NetMulticast, Reliable, BlueprintCallable)
+	void TriggerGameOverEvent();
 };

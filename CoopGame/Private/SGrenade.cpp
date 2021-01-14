@@ -24,5 +24,5 @@ void ASGrenade::Fire() {
 		GetWorld()->SpawnActor<AActor>(GrenadeClass, MuzzleLocation, EyeRotation, SpawnParams);
 	}
 
-	
+
 }

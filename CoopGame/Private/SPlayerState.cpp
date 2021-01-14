@@ -6,6 +6,6 @@
 
 void ASPlayerState::AddScore_Implementation(float ScoreDelta) {
 	SetScore(GetScore() + ScoreDelta);
-	OnScoreUpdated.Broadcast(Score);
+	OnScoreUpdated.Broadcast(GetScore());
 	UE_LOG(LogTemp, Log, TEXT("Score added"));
 }

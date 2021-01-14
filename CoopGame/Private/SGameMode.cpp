@@ -28,8 +28,6 @@ void ASGameMode::StartWave() {
 		GS->PlayWaveStartSFX();
 	}
 
-	// OnNewWaveStarted.Broadcast(WaveCount);
-
 	numOfBotsToSpawn = GS->GetWaveCount() * SpawnRateMultiplier + SpawnRateAdder;
 
 	GetWorldTimerManager().SetTimer(TimerHandle_BotSpawner, this, &ASGameMode::SpawnBotTimerElasped, 1.0f, true, 0.0f);
@@ -52,6 +50,11 @@ void ASGameMode::EndWave() {
 }
 
 void ASGameMode::PrepareForNextWave() {
+
+	ASGameState *GS = GetGameState<ASGameState>();
+	EWaveState CurrentWaveState = GS->GetWaveState();
+
+	if (CurrentWaveState == EWaveState::GameOver) return;
 	
 	GetWorldTimerManager().SetTimer(TimerHandle_NextWaveStarts, this, &ASGameMode::StartWave, TimeBetweenWaves, false);
 
@@ -67,7 +70,6 @@ void ASGameMode::CheckWaveState() {
 	if (numOfBotsToSpawn > 0 || bIsPreparingForWave) {
 		return;
 	}
-
 
 	bool bIsAnyBotAlive = false;
 
@@ -87,9 +89,7 @@ void ASGameMode::CheckWaveState() {
 
 	if (!bIsAnyBotAlive) {
 		SetWaveState(EWaveState::WaveComplete);
-
 		PrepareForNextWave();
-
 	}
 }
 
@@ -122,6 +122,7 @@ void ASGameMode::GameOver() {
 	ASGameState *GS = GetGameState<ASGameState>();
 	if (ensureAlways(GS)) {
 		GS->PlayGameOverSFX();
+		GS->TriggerGameOverEvent();
 	}
 
 	// reload the level
@@ -129,7 +130,8 @@ void ASGameMode::GameOver() {
 	// RestartGame();
 
 	//@TODO: finish up the match, presents "game over" to players
-	UE_LOG(LogTemp, Log, TEXT("GAME OVER! Player Died"));
+	// UE_LOG(LogTemp, Log, TEXT("GAME OVER! Player Died"));
+	
 }
 
 void ASGameMode::SetWaveState(EWaveState NewState) {
@@ -159,14 +161,15 @@ void ASGameMode::StartPlay() {
 void ASGameMode::Tick(float DeltaSeconds) {
 	Super::Tick(DeltaSeconds);
 
-	CheckWaveState();
-
 	ASGameState *GS = GetGameState<ASGameState>();
-	EWaveState CurrentState = GS->GetWaveState();
-	if (CurrentState != EWaveState::GameOver) {
-		CheckAnyPlayerAlive();
+	EWaveState CurrentWaveState = GS->GetWaveState();
+
+	if (CurrentWaveState == EWaveState::GameOver) {
+		GameOver();
+		return;
 	}
-	
+
+	CheckWaveState();
 }
 
 void ASGameMode::SpawnBotTimerElasped() {

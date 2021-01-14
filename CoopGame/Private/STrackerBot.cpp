@@ -62,7 +62,14 @@ void ASTrackerBot::BeginPlay()
 	}
 }
 
-void ASTrackerBot::HandleTakeDamage(USHealthComponent *OwningHealthComp, float Health, float HealthDelta, const class UDamageType *DamageType, class AController *InsitigatedBy, AActor *DamageCauser) {
+void ASTrackerBot::HandleTakeDamage(USHealthComponent *OwningHealthComp, 
+		float TotalHealth, 
+		float CurrentHealth, 
+		float HealthDelta, 
+		const class UDamageType *DamageType, 
+		class AController *InsitigatedBy, 
+		AActor *DamageCauser) {
+	
 	// Explode on hitpoints == 0
 
 	// @TODO: Pulse the material on hit
@@ -75,9 +82,9 @@ void ASTrackerBot::HandleTakeDamage(USHealthComponent *OwningHealthComp, float H
 		MatInst->SetScalarParameterValue("LastTimeDamageTaken", GetWorld()->TimeSeconds);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Health %s of %s"), *FString::SanitizeFloat(Health), *GetName());
+	// UE_LOG(LogTemp, Log, TEXT("Health %s of %s"), *FString::SanitizeFloat(Health), *GetName());
 
-	if (Health <= 0.0f) {
+	if (CurrentHealth <= 0.0f) {
 		SelfDestruct();
 	}
 }

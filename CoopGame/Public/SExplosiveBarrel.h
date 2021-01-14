@@ -31,8 +31,13 @@ protected:
 	URadialForceComponent *RadialForceComp;
 
 	UFUNCTION()
-	void OnHealthChanged(USHealthComponent *OwningHealthComp, float Health, float HealthDelta, const class UDamageType *DamageType,
-		class AController *InstigatedBy, AActor *DamageCause);
+	void OnHealthChanged(USHealthComponent *OwningHealthComp, 
+		float TotalHealth, 
+		float CurrentHealth, 
+		float HealthDelta, 
+		const class UDamageType *DamageType,
+		class AController *InstigatedBy, 
+		AActor *DamageCause);
 
 	UPROPERTY(EditDefaultsOnly, Category = "FX")
 	UParticleSystem *ExplosionEffect;
